@@ -1,4 +1,4 @@
-*! version 1.0.0 2026-04-22
+*! version {{VERSION}} {{DATE}}
 * =============================================================================
 * datamirror - Statistical Disclosure Control via Synthetic Data
 * Main command dispatcher
@@ -9,7 +9,8 @@ program define datamirror, rclass
 	version 16.0
 
 	* Core check: registream must be installed. Each package ships its own
-	* files only; modules depend on core being present on adopath.
+	* files only; modules depend on core being present on adopath. See
+	* registream-docs/architecture/version_coordination.md.
 	cap findfile _rs_utils.ado
 	if _rc != 0 {
 		di as error ""
@@ -18,9 +19,17 @@ program define datamirror, rclass
 		di as error "datamirror requires the registream core package. Install it first:"
 		di as error `"  ssc install registream"'
 		di as error "  (or from GitHub:)"
-		di as error `"  net install registream, from("https://registream.org/install/stata/latest") replace"'
+		di as error `"  net install registream, from("https://registream.org/install/stata/registream/latest") replace"'
 		di as error ""
 		exit 198
+	}
+
+	* Min-core version check (Phase 4 of version_coordination.md). MIN_CORE
+	* is build-injected from packages.json; in source mode it stays as the
+	* literal placeholder, which the regex guard treats as "skip".
+	local DATAMIRROR_MIN_CORE "{{MIN_CORE}}"
+	if (regexm("`DATAMIRROR_MIN_CORE'", "^[0-9]")) {
+		_rs_check_core_version "datamirror" "`DATAMIRROR_MIN_CORE'"
 	}
 
 	* Get core version from registream core (must be installed)
