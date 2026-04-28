@@ -1,0 +1,9 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "datamirror: Checkpoint-constrained synthetic data for register-data workflows"
+authors:
+  - family-names: Clark
+    given-names: "J."
+year: 2026
+url: "https://registream.org/docs/datamirror"
+type: software

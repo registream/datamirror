@@ -1,0 +1,5 @@
+# Per-paper replication folders are excluded from the public repo.
+# Headline results live in RESULTS.md / RESULTS_APPENDIX.md, and the
+# replication-level README points at the openICPSR project IDs so readers
+# can rebuild the artifact from the original AEA replication package.
+[0-9]*/

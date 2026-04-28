@@ -1,0 +1,699 @@
+
+  ___  ____  ____  ____  ____ (R)
+ /__    /   ____/   /   ____/
+___/   /   /___/   /   /___/   16.0   Copyright 1985-2019 StataCorp LLC
+  Statistics/Data Analysis            StataCorp
+                                      4905 Lakeway Drive
+     MP - Parallel Edition            College Station, Texas 77845 USA
+                                      800-STATA-PC        http://www.stata.com
+                                      979-696-4600        stata@stata.com
+                                      979-696-4601 (fax)
+
+40-user 2-core Stata network perpetual license:
+       Serial number:  501606206671
+         Licensed to:  Jeffrey Clark
+                       Stockholm University
+
+Notes:
+      1.  Stata is running in batch mode.
+      2.  Unicode is supported; see help unicode_advice.
+      3.  More than 2 billion observations are allowed; see help obs_advice.
+      4.  Maximum number of variables is set to 5000; see help set_maxvar.
+
+. do /tmp/run_hello.do 
+
+. adopath ++ "stata/src"
+  [1]              "stata/src"
+  [2]  (BASE)      "/Applications/Stata/ado/base/"
+  [3]  (SITE)      "/Applications/Stata/ado/site/"
+  [4]              "."
+  [5]  (PERSONAL)  "/Users/<user>/Documents/Stata/ado/personal/"
+  [6]  (PLUS)      "/Users/<user>/Library/Application Support/Stata/ado/plus/"
+  [7]  (OLDPLACE)  "~/ado/"
+
+. adopath ++ "../registream/stata/src"
+  [1]              "../registream/stata/src"
+  [2]              "stata/src"
+  [3]  (BASE)      "/Applications/Stata/ado/base/"
+  [4]  (SITE)      "/Applications/Stata/ado/site/"
+  [5]              "."
+  [6]  (PERSONAL)  "/Users/<user>/Documents/Stata/ado/personal/"
+  [7]  (PLUS)      "/Users/<user>/Library/Application Support/Stata/ado/plus/"
+  [8]  (OLDPLACE)  "~/ado/"
+
+. do examples/hello_world.do
+
+. * ===========================================================================
+> ==
+. * datamirror hello-world example
+. * ---------------------------------------------------------------------------
+> --
+. * Five-minute round trip on Stata's built-in auto.dta:
+. *   1. Fit a regression on the real data.
+. *   2. Tag it as a checkpoint and export marginals + coefficients.
+. *   3. Rebuild a synthetic dataset from the export directory.
+. *   4. Fit the same regression on the synthetic data and verify the
+. *      coefficient comes back.
+. *
+. * To run this file from the repo root:
+. *   do examples/hello_world.do
+. *
+. * The companion log (examples/hello_world.log) shows what a successful
+. * run looks like. If your run diverges substantively, open an issue with
+. * the log attached.
+. * ===========================================================================
+> ==
+. 
+. clear all
+
+. set more off
+
+. set seed 20260422
+
+. 
+. di as result "=============================================================="
+==============================================================
+
+. di as result "  datamirror hello-world  (Stata auto.dta, 74 obs, one model)"
+  datamirror hello-world  (Stata auto.dta, 74 obs, one model)
+
+. di as result "=============================================================="
+==============================================================
+
+. 
+. * ---------------------------------------------------------------------------
+> --
+. * 1. Load data and fit the target regression.
+. * ---------------------------------------------------------------------------
+> --
+. sysuse auto, clear
+(1978 Automobile Data)
+
+. di as txt _n "{bf:Data:} " _N " cars, " c(k) " variables"
+
+Data: 74 cars, 12 variables
+
+. 
+. di as txt _n "{bf:Target regression:}"
+
+Target regression:
+
+. regress price mpg weight foreign
+
+      Source |       SS           df       MS      Number of obs   =        74
+-------------+----------------------------------   F(3, 70)        =     23.29
+       Model |   317252881         3   105750960   Prob > F        =    0.0000
+    Residual |   317812515        70  4540178.78   R-squared       =    0.4996
+-------------+----------------------------------   Adj R-squared   =    0.4781
+       Total |   635065396        73  8699525.97   Root MSE        =    2130.8
+
+------------------------------------------------------------------------------
+       price |      Coef.   Std. Err.      t    P>|t|     [95% Conf. Interval]
+-------------+----------------------------------------------------------------
+         mpg |    21.8536   74.22114     0.29   0.769    -126.1758     169.883
+      weight |   3.464706    .630749     5.49   0.000     2.206717    4.722695
+     foreign |    3673.06   683.9783     5.37   0.000     2308.909    5037.212
+       _cons |  -5853.696   3376.987    -1.73   0.087    -12588.88    881.4934
+------------------------------------------------------------------------------
+
+. 
+. scalar target_mpg     = _b[mpg]
+
+. scalar target_weight  = _b[weight]
+
+. scalar target_foreign = _b[foreign]
+
+. scalar target_cons    = _b[_cons]
+
+. di as txt _n "Target coefficients recorded for mpg, weight, foreign, _cons."
+
+Target coefficients recorded for mpg, weight, foreign, _cons.
+
+. 
+. * ---------------------------------------------------------------------------
+> --
+. * 2. Open a datamirror session, checkpoint the regression, extract.
+. * ---------------------------------------------------------------------------
+> --
+. local outdir "/tmp/datamirror_hello_out"
+
+. cap mkdir "`outdir'"
+
+. 
+. di as txt _n "{bf:datamirror init}"
+
+datamirror init
+
+. datamirror init, checkpoint_dir("`outdir'") replace min_cell_size(1)
+
+══════════════════════════════════════════════════════════════
+DATAMIRROR SESSION INITIALIZED
+══════════════════════════════════════════════════════════════
+Checkpoint directory: /tmp/datamirror_hello_out/
+Min cell size:        1 (default is 50)
+
+Ready to checkpoint models. Usage:
+  1. Run your regression/model
+  2. datamirror checkpoint, tag("name")
+  3. Repeat for all models
+  4. datamirror extract
+  5. datamirror close
+══════════════════════════════════════════════════════════════
+
+. 
+. di as txt _n "{bf:datamirror checkpoint}"
+
+datamirror checkpoint
+
+. datamirror checkpoint, tag("price_model")
+
+Checkpoint 1: price_model
+  Command: regress
+  N = 74
+  R² = 0.4996
+✓ Checkpoint 1 saved
+
+. 
+. di as txt _n "{bf:datamirror extract}"
+
+datamirror extract
+
+. datamirror extract
+
+══════════════════════════════════════════════════════════════
+DATAMIRROR EXTRACT
+══════════════════════════════════════════════════════════════
+Exporting schema...
+Capturing 12 variables from dataset
+(note: file /tmp/datamirror_hello_out/schema.csv not found)
+✓ schema.csv
+Exporting marginals (continuous)...
+(note: file /tmp/datamirror_hello_out/marginals_cont.csv not found)
+✓ marginals_cont.csv
+Exporting marginals (categorical)...
+(note: file /tmp/datamirror_hello_out/marginals_cat.csv not found)
+✓ marginals_cat.csv
+Exporting correlations...
+  Computing correlation matrix for 11 variables...
+(note: file /tmp/datamirror_hello_out/correlations.csv not found)
+✓ correlations.csv (full matrix: continuous + categorical)
+Exporting checkpoints...
+(note: file /tmp/datamirror_hello_out/checkpoints.csv not found)
+(note: file /tmp/datamirror_hello_out/checkpoints_coef.csv not found)
+✓ checkpoints.csv
+✓ checkpoints_coef.csv
+
+Exporting metadata...
+(note: file /tmp/datamirror_hello_out/metadata.csv not found)
+✓ metadata.csv
+
+Exporting manifest...
+(note: file /tmp/datamirror_hello_out/manifest.csv not found)
+✓ manifest.csv
+
+══════════════════════════════════════════════════════════════
+EXPORT COMPLETE
+══════════════════════════════════════════════════════════════
+Output directory: /tmp/datamirror_hello_out/
+See manifest.csv for the file listing.
+
+. 
+. datamirror close
+
+══════════════════════════════════════════════════════════════
+DATAMIRROR SESSION CLOSED
+══════════════════════════════════════════════════════════════
+Session: /tmp/datamirror_hello_out/
+Checkpoints created: 1
+
+All checkpoint globals cleared
+You can now start a new session with 'datamirror init'
+══════════════════════════════════════════════════════════════
+
+. 
+. * ---------------------------------------------------------------------------
+> --
+. * 3. Fresh session: rebuild synthetic data from the export directory.
+. *    In real use this step runs on a different machine with no access
+. *    to the original data; here we simulate that by clearing first.
+. * ---------------------------------------------------------------------------
+> --
+. di as txt _n "{bf:datamirror rebuild}  (fresh session, no access to original 
+> data)"
+
+datamirror rebuild  (fresh session, no access to original data)
+
+. clear
+
+. datamirror rebuild using "`outdir'", clear seed(12345)
+
+══════════════════════════════════════════════════════════════
+DATAMIRROR REBUILD
+══════════════════════════════════════════════════════════════
+
+Reading metadata...
+(2 vars, 9 obs)
+  N = 74
+  Variables = 12
+  Checkpoints = 1
+
+Reading schema...
+(5 vars, 12 obs)
+(note: file /var/folders/6v/1y4fyww56814zrcf_76ph7f40000gn/T//St34780.000003 no
+> t found)
+file /var/folders/6v/1y4fyww56814zrcf_76ph7f40000gn/T//St34780.000003 saved
+Reading marginal distributions (continuous)...
+(102 vars, 10 obs)
+(note: file /var/folders/6v/1y4fyww56814zrcf_76ph7f40000gn/T//St34780.000005 no
+> t found)
+file /var/folders/6v/1y4fyww56814zrcf_76ph7f40000gn/T//St34780.000005 saved
+Reading marginal distributions (categorical)...
+(4 vars, 76 obs)
+(note: file /var/folders/6v/1y4fyww56814zrcf_76ph7f40000gn/T//St34780.000007 no
+> t found)
+file /var/folders/6v/1y4fyww56814zrcf_76ph7f40000gn/T//St34780.000007 saved
+`"foreign"' `"make"'
+Reading correlations...
+(3 vars, 121 obs)
+(note: file /var/folders/6v/1y4fyww56814zrcf_76ph7f40000gn/T//St34780.000009 no
+> t found)
+file /var/folders/6v/1y4fyww56814zrcf_76ph7f40000gn/T//St34780.000009 saved
+Reading checkpoints...
+(8 vars, 1 obs)
+(note: file /var/folders/6v/1y4fyww56814zrcf_76ph7f40000gn/T//St34780.00000b no
+> t found)
+file /var/folders/6v/1y4fyww56814zrcf_76ph7f40000gn/T//St34780.00000b saved
+✓ All files loaded
+
+══════════════════════════════════════════════════════════════
+COEFFICIENT-AWARE COPULA: Encoding checkpoint constraints
+══════════════════════════════════════════════════════════════
+displacement foreign gear_ratio headroom length mpg price rep78 trunk turn weig
+> ht
+Variables: displacement foreign gear_ratio headroom length mpg price rep78 trun
+> k turn weight
+Original correlation matrix: 11 x 11
+Reading marginals for SD computation...
+  Loaded 10 variables
+    price: SD = 1591.549
+    mpg: SD =  5.189
+    rep78: SD =  0.741
+    headroom: SD =  0.741
+    trunk: SD =  5.189
+    weight: SD = 1008.154
+    length: SD = 25.204
+    turn: SD =  5.189
+    displacement: SD = 97.109
+    gear_ratio: SD =  0.474
+  ✓ Computed SDs for 10 variables
+(8 vars, 1 obs)
+(note: file /var/folders/6v/1y4fyww56814zrcf_76ph7f40000gn/T//St34780.00000e no
+> t found)
+  Checking checkpoint 1: price (cmd: regress)
+    Loading coefficients...
+    Loaded 4 coefficients
+      Predictor 1: mpg (β = 21.854)
+      Predictor 2: weight (β =  3.465)
+      Predictor 3: foreign (β = 3673.060)
+    Extracted 3 predictors
+    ⚠ Skipping checkpoint 1: predictor foreign is categorical (no SD available 
+> for standardization)
+
+Executing correlation adjustment script...
+
+✓ Correlation matrix adjusted for checkpoint constraints
+  Copula will now sample from coefficient-aware distribution
+(3 vars, 121 obs)
+(note: file /var/folders/6v/1y4fyww56814zrcf_76ph7f40000gn/T//St34780.00000d no
+> t found)
+file /var/folders/6v/1y4fyww56814zrcf_76ph7f40000gn/T//St34780.00000d saved
+
+══════════════════════════════════════════════════════════════
+STEP 1: Generating Synthetic Data (Gaussian Copula)
+══════════════════════════════════════════════════════════════
+number of observations (_N) was 0, now 74
+Generating 101 correlated normal variates...
+`"displacement"' `"foreign"' `"gear_ratio"' `"headroom"' `"length"' `"mpg"' `"p
+> rice"' `"rep78"' `"trunk"' `"turn"' `"weight"'
+number of observations (_N) was 0, now 74
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(74 real changes made)
+(note: file /var/folders/6v/1y4fyww56814zrcf_76ph7f40000gn/T//St34780.00000e no
+> t found)
+file /var/folders/6v/1y4fyww56814zrcf_76ph7f40000gn/T//St34780.00000e saved
+
+══════════════════════════════════════════════════════════════
+STEP 2: Matching Marginal Distributions
+══════════════════════════════════════════════════════════════
+`"displacement"' `"foreign"' `"gear_ratio"' `"headroom"' `"length"' `"mpg"' `"p
+> rice"' `"rep78"' `"trunk"' `"turn"' `"weight"'
+(74 missing values generated)
+file /var/folders/6v/1y4fyww56814zrcf_76ph7f40000gn/T//St34780.00000e saved
+  ✓ price
+(74 missing values generated)
+file /var/folders/6v/1y4fyww56814zrcf_76ph7f40000gn/T//St34780.00000e saved
+  ✓ mpg
+(74 missing values generated)
+file /var/folders/6v/1y4fyww56814zrcf_76ph7f40000gn/T//St34780.00000e saved
+  ✓ rep78
+(74 missing values generated)
+file /var/folders/6v/1y4fyww56814zrcf_76ph7f40000gn/T//St34780.00000e saved
+  ✓ headroom
+(74 missing values generated)
+file /var/folders/6v/1y4fyww56814zrcf_76ph7f40000gn/T//St34780.00000e saved
+  ✓ trunk
+(74 missing values generated)
+file /var/folders/6v/1y4fyww56814zrcf_76ph7f40000gn/T//St34780.00000e saved
+  ✓ weight
+(74 missing values generated)
+file /var/folders/6v/1y4fyww56814zrcf_76ph7f40000gn/T//St34780.00000e saved
+  ✓ length
+(74 missing values generated)
+file /var/folders/6v/1y4fyww56814zrcf_76ph7f40000gn/T//St34780.00000e saved
+  ✓ turn
+(74 missing values generated)
+file /var/folders/6v/1y4fyww56814zrcf_76ph7f40000gn/T//St34780.00000e saved
+  ✓ displacement
+(74 missing values generated)
+file /var/folders/6v/1y4fyww56814zrcf_76ph7f40000gn/T//St34780.00000e saved
+  ✓ gear_ratio
+`"foreign"' `"make"'
+(74 observations deleted)
+(74 missing values generated)
+file /var/folders/6v/1y4fyww56814zrcf_76ph7f40000gn/T//St34780.00000e saved
+  ✓ foreign
+(2 observations deleted)
+(74 missing values generated)
+file /var/folders/6v/1y4fyww56814zrcf_76ph7f40000gn/T//St34780.00000e saved
+  ✓ make
+
+✓ Synthetic data generated: 74 observations
+
+══════════════════════════════════════════════════════════════
+LAYER 4: APPLYING CHECKPOINT CONSTRAINTS
+══════════════════════════════════════════════════════════════
+(8 vars, 1 obs)
+(4 vars, 4 obs)
+Found 1 checkpoints to enforce
+
+══════════════════════════════════════════════════════════════
+GLOBAL PASS 1 of 3
+══════════════════════════════════════════════════════════════
+
+------------------------------------------------------------
+Checkpoint 1: price_model (pass 1)
+------------------------------------------------------------
+  Model: regress price mpg weight foreign
+  Pre-adjust max |Δβ|:  5.4e+03 (closed-form one-shot; post-adjust = 0 up to pr
+> ecision)
+
+══════════════════════════════════════════════════════════════
+GLOBAL PASS 2 of 3
+══════════════════════════════════════════════════════════════
+
+------------------------------------------------------------
+Checkpoint 1: price_model (pass 2)
+------------------------------------------------------------
+  Model: regress price mpg weight foreign
+  Pre-adjust max |Δβ|: 0.000091 (closed-form one-shot; post-adjust = 0 up to pr
+> ecision)
+
+══════════════════════════════════════════════════════════════
+GLOBAL PASS 3 of 3
+══════════════════════════════════════════════════════════════
+
+------------------------------------------------------------
+Checkpoint 1: price_model (pass 3)
+------------------------------------------------------------
+  Model: regress price mpg weight foreign
+  Pre-adjust max |Δβ|: 0.000067 (closed-form one-shot; post-adjust = 0 up to pr
+> ecision)
+
+══════════════════════════════════════════════════════════════
+CHECKPOINT CONSTRAINTS APPLIED
+══════════════════════════════════════════════════════════════
+
+══════════════════════════════════════════════════════════════
+REBUILD COMPLETE
+══════════════════════════════════════════════════════════════
+
+Synthetic dataset created:
+  Observations: 74
+  Variables: 12
+
+Methods used:
+  ✓ Gaussian copula for correlation structure
+  ✓ Quantile matching for marginal distributions
+  ✓ Categorical proportions preserved
+
+. 
+. di as txt _n "{bf:Synthetic data:} " _N " rows, " c(k) " variables"
+
+Synthetic data: 74 rows, 12 variables
+
+. 
+. * ---------------------------------------------------------------------------
+> --
+. * 4. Fit the same regression on the synthetic data and compare.
+. * ---------------------------------------------------------------------------
+> --
+. di as txt _n "{bf:Same regression on synthetic data:}"
+
+Same regression on synthetic data:
+
+. regress price mpg weight foreign
+
+      Source |       SS           df       MS      Number of obs   =        74
+-------------+----------------------------------   F(3, 70)        =     52.54
+       Model |   612348019         3   204116006   Prob > F        =    0.0000
+    Residual |   271924120        70  3884630.28   R-squared       =    0.6925
+-------------+----------------------------------   Adj R-squared   =    0.6793
+       Total |   884272139        73    12113317   Root MSE        =    1970.9
+
+------------------------------------------------------------------------------
+       price |      Coef.   Std. Err.      t    P>|t|     [95% Conf. Interval]
+-------------+----------------------------------------------------------------
+         mpg |    21.8536   117.6707     0.19   0.853    -212.8332    256.5404
+      weight |   3.464706   .8432849     4.11   0.000     1.782827    5.146585
+     foreign |    3673.06   539.5046     6.81   0.000     2597.052    4749.068
+       _cons |  -5853.696   4972.406    -1.18   0.243    -15770.85    4063.456
+------------------------------------------------------------------------------
+
+. 
+. scalar synth_mpg     = _b[mpg]
+
+. scalar synth_weight  = _b[weight]
+
+. scalar synth_foreign = _b[foreign]
+
+. scalar synth_cons    = _b[_cons]
+
+. 
+. scalar se_mpg     = _se[mpg]
+
+. scalar se_weight  = _se[weight]
+
+. scalar se_foreign = _se[foreign]
+
+. scalar se_cons    = _se[_cons]
+
+. 
+. scalar dse_mpg     = abs(synth_mpg     - target_mpg)     / se_mpg
+
+. scalar dse_weight  = abs(synth_weight  - target_weight)  / se_weight
+
+. scalar dse_foreign = abs(synth_foreign - target_foreign) / se_foreign
+
+. scalar dse_cons    = abs(synth_cons    - target_cons)    / se_cons
+
+. 
+. di as txt _n "{bf:Coefficient recovery} (Δβ/SE; fidelity target < 3)"
+
+Coefficient recovery (Δβ/SE; fidelity target < 3)
+
+. di as txt "{hline 60}"
+------------------------------------------------------------
+
+. di as txt "  mpg     target="   %8.3f target_mpg     "  synth=" %8.3f synth_m
+> pg     "  Δβ/SE=" %5.3f dse_mpg
+  mpg     target=  21.854  synth=  21.854  Δβ/SE=0.000
+
+. di as txt "  weight  target="   %8.3f target_weight  "  synth=" %8.3f synth_w
+> eight  "  Δβ/SE=" %5.3f dse_weight
+  weight  target=   3.465  synth=   3.465  Δβ/SE=0.000
+
+. di as txt "  foreign target="   %8.3f target_foreign "  synth=" %8.3f synth_f
+> oreign "  Δβ/SE=" %5.3f dse_foreign
+  foreign target=3673.060  synth=3673.060  Δβ/SE=0.000
+
+. di as txt "  _cons   target="   %8.3f target_cons    "  synth=" %8.3f synth_c
+> ons    "  Δβ/SE=" %5.3f dse_cons
+  _cons   target=-5.9e+03  synth=-5.9e+03  Δβ/SE=0.000
+
+. di as txt "{hline 60}"
+------------------------------------------------------------
+
+. 
+. scalar max_dse = max(dse_mpg, dse_weight, dse_foreign, dse_cons)
+
+. di as txt "{bf:Max Δβ/SE across all coefficients:} " %5.3f max_dse
+Max Δβ/SE across all coefficients: 0.000
+
+. 
+. if max_dse < 3 {
+.     di as result _n "✓ Hello-world round trip succeeded (Δβ/SE < 3)."
+
+✓ Hello-world round trip succeeded (Δβ/SE < 3).
+. }
+
+. else {
+.     di as error _n "✗ Hello-world round trip exceeded Δβ/SE < 3 (" %5.3f max_
+> dse ")"
+. }
+
+. 
+. di as txt _n "Export artifact left at: `outdir'/"
+
+Export artifact left at: /tmp/datamirror_hello_out/
+
+. di as txt "Contents are disclosure-safe: marginals, correlations, checkpoint"
+Contents are disclosure-safe: marginals, correlations, checkpoint
+
+. di as txt "coefficients. No individual-level data crosses the boundary."
+coefficients. No individual-level data crosses the boundary.
+
+. 
+end of do-file
+
+. 
+end of do-file
