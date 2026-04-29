@@ -24,20 +24,23 @@ program define datamirror, rclass
 		exit 198
 	}
 
-	* Min-core version check (Phase 4 of version_coordination.md). MIN_CORE
-	* is build-injected from packages.json; in source mode it stays as the
-	* literal placeholder, which the regex guard treats as "skip".
-	local DATAMIRROR_MIN_CORE "{{MIN_CORE}}"
-	if (regexm("`DATAMIRROR_MIN_CORE'", "^[0-9]")) {
-		_rs_check_core_version "datamirror" "`DATAMIRROR_MIN_CORE'"
-	}
-
 	* Get core version from registream core (must be installed)
 	_rs_utils get_version
 	local REGISTREAM_VERSION "`r(version)'"
 
 	* Datamirror module version (stamped from packages.json by export_package.py)
 	local DATAMIRROR_VERSION "{{VERSION}}"
+
+	* Min-core version check (Phase 4 of version_coordination.md). MIN_CORE
+	* is build-injected from packages.json; in source mode it stays as the
+	* literal placeholder, which the regex guard treats as "skip". Routed
+	* through the _rs_utils dispatcher because Stata's autoloader registers
+	* only the filename-matched program — nested programs in _rs_utils.ado
+	* aren't directly callable from outside.
+	local DATAMIRROR_MIN_CORE "{{MIN_CORE}}"
+	if (regexm("`DATAMIRROR_MIN_CORE'", "^[0-9]")) {
+		_rs_utils check_core_version "datamirror" "`DATAMIRROR_MIN_CORE'"
+	}
 
 	* ==========================================================================
 	* MASTER WRAPPER (START): Usage tracking
