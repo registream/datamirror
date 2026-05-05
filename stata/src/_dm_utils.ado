@@ -108,7 +108,7 @@ end
 * #############################################################################
 * SECTION A: SESSION MANAGEMENT
 * -----------------------------------------------------------------------------
-* init / close / checkpoint — session lifecycle and global state
+* init / close / checkpoint: session lifecycle and global state
 * #############################################################################
 
 
@@ -195,7 +195,7 @@ program define _dm_init
 	_rs_utils mkdir_p "`checkpoint_dir'"
 
 	* Verify directory was created. Use _rs_utils confirmdir (cap cd test)
-	* rather than `confirm file dir/.` — the latter returns r(601) for
+	* rather than `confirm file dir/.`: the latter returns r(601) for
 	* directories on Stata for Windows regardless of whether the directory
 	* exists, breaking init even after a successful mkdir.
 	_rs_utils confirmdir "`checkpoint_dir'"
@@ -255,9 +255,9 @@ program define _dm_init
 	global dm_dataset_N = _N
 	global dm_dataset_k = c(k)
 
-	di as txt _n "══════════════════════════════════════════════════════════════"
+	di as txt _n "{hline 60}"
 	di as result "DATAMIRROR SESSION INITIALIZED"
-	di as txt "══════════════════════════════════════════════════════════════"
+	di as txt "{hline 60}"
 	di as txt "Checkpoint directory: " as result "`checkpoint_dir'/"
 	if $dm_min_cell_size != $DM_MIN_CELL_SIZE {
 		di as txt "Min cell size:        " as result $dm_min_cell_size ///
@@ -291,7 +291,7 @@ program define _dm_init
 		di as txt "Note: Stratification enabled. Synthetic data will preserve"
 		di as txt "      within-`strata' marginals and correlations."
 	}
-	di as txt "══════════════════════════════════════════════════════════════"
+	di as txt "{hline 60}"
 end
 
 * -----------------------------------------------------------------------------
@@ -360,15 +360,15 @@ program define _dm_close
 		global dm_autocount_`c' ""
 	}
 
-	di as txt _n "══════════════════════════════════════════════════════════════"
+	di as txt _n "{hline 60}"
 	di as result "DATAMIRROR SESSION CLOSED"
-	di as txt "══════════════════════════════════════════════════════════════"
+	di as txt "{hline 60}"
 	di as txt "Session: " as result "`dir'/"
 	di as txt "Checkpoints created: " as result "`n_ckpts'"
 	di as txt ""
 	di as txt "All checkpoint globals cleared"
 	di as txt "You can now start a new session with 'datamirror init'"
-	di as txt "══════════════════════════════════════════════════════════════"
+	di as txt "{hline 60}"
 end
 
 * -----------------------------------------------------------------------------
@@ -383,9 +383,9 @@ program define _dm_status
 		exit 0
 	}
 
-	di as txt _n "══════════════════════════════════════════════════════════════"
+	di as txt _n "{hline 60}"
 	di as result "DATAMIRROR SESSION STATUS"
-	di as txt "══════════════════════════════════════════════════════════════"
+	di as txt "{hline 60}"
 	di as txt "Checkpoint dir:  " as result "$dm_checkpoint_dir/"
 	if "$dm_strata_var" != "" {
 		di as txt "Stratified by:   " as result "$dm_strata_var"
@@ -406,7 +406,7 @@ program define _dm_status
 	if `n' > 0 {
 		di as txt ""
 		di as txt "  #   tag                              cmd        depvar       N"
-		di as txt "  ─── ──────────────────────────────── ────────── ──────────── ──────────"
+		di as txt "  {hline 76}"
 		forval i = 1/`n' {
 			local tag    "${dm_cp`i'_tag}"
 			local cmd    "${dm_cp`i'_cmd}"
@@ -416,7 +416,7 @@ program define _dm_status
 		}
 	}
 
-	di as txt "══════════════════════════════════════════════════════════════"
+	di as txt "{hline 60}"
 	if `n' == 0 {
 		di as txt "Next:  run a supported regression, then " as result "datamirror checkpoint"
 	}
@@ -790,7 +790,7 @@ program define _dm_extract
 	}
 	local qtrim_hi = 100 - `qtrim'
 
-	* Suppression counters — accumulated across all privacy passes and
+	* Suppression counters: accumulated across all privacy passes and
 	* persisted into metadata.csv at the end of extract for audit trail.
 	local n_suppressed = 0
 	local n_categories = 0
@@ -811,9 +811,9 @@ program define _dm_extract
 		}
 	}
 
-	di as txt _n "══════════════════════════════════════════════════════════════"
+	di as txt _n "{hline 60}"
 	di as result "DATAMIRROR EXTRACT"
-	di as txt "══════════════════════════════════════════════════════════════"
+	di as txt "{hline 60}"
 
 	* Metadata is written LAST so it can record privacy-suppression counts
 	* accumulated across all subsequent passes (marginals, stratified, corr).
@@ -1264,7 +1264,9 @@ program define _dm_extract
 		local nvars : word count `allnumvars_recoded'
 		di as txt "  Computing correlation matrix for `nvars' variables..."
 
-		* Automatically increase matsize if needed
+		* Raise matsize when the variable count exceeds the session limit.
+		* Stata's default matsize is 400; pwcorr produces an nvars*nvars
+		* matrix and fails when nvars exceeds that ceiling.
 		if `nvars' > c(matsize) {
 			di as txt "  Increasing matsize from `=c(matsize)' to `nvars'..."
 			set matsize `nvars'
@@ -1368,7 +1370,7 @@ program define _dm_extract
 				continue
 			}
 
-			* Ensure matsize is adequate (should already be set from main correlations)
+			* Ensure matsize is adequate (typically already set from main correlations).
 			local nvars_s : word count `corr_vars_recoded'
 			if `nvars_s' > c(matsize) {
 				set matsize `nvars_s'
@@ -1481,7 +1483,7 @@ program define _dm_extract
 	* Normalise datamirror_version: detect_installed_modules reads the
 	* `*! version X.Y.Z` header off the on-disk datamirror.ado. In dev
 	* (unstamped header) the version regex doesn't match and detect
-	* returns empty — record "dev" in that case.
+	* returns empty; record "dev" in that case.
 	*
 	* Do NOT compare against an unresolved placeholder string here: the
 	* build's stamp_file() substitutes those placeholders verbatim inside
@@ -1566,9 +1568,9 @@ program define _dm_extract
 	file close `mh'
 	di as result "✓ manifest.csv"
 
-	di as txt _n "══════════════════════════════════════════════════════════════"
+	di as txt _n "{hline 60}"
 	di as result "EXPORT COMPLETE"
-	di as txt "══════════════════════════════════════════════════════════════"
+	di as txt "{hline 60}"
 	di as txt "Output directory: " as result "`outdir'/"
 	di as txt "See " as result "manifest.csv" as txt " for the file listing."
 end
@@ -1656,9 +1658,9 @@ program define _dm_rebuild
 
 	set seed `seed'
 
-	di as txt _n "══════════════════════════════════════════════════════════════"
+	di as txt _n "{hline 60}"
 	di as result "DATAMIRROR REBUILD"
-	di as txt "══════════════════════════════════════════════════════════════"
+	di as txt "{hline 60}"
 
 	* Read metadata first to check for stratification
 	di as txt _n "Reading metadata..."
@@ -1757,10 +1759,10 @@ program define _dm_rebuild
 
 	di as result "✓ All files loaded"
 
-	* ══════════════════════════════════════════════════════════════════════
+	* ======================================================================
 	* STEP 0: Adjust correlations for checkpoint constraints (coefficient-aware copula)
 	* Only if checkpoints exist
-	* ══════════════════════════════════════════════════════════════════════
+	* ======================================================================
 
 	if `has_checkpoints' {
 		_dm_constraints corr_for_ckpt "`indir'" "`corr_file'" "`marg_cont'"
@@ -1774,13 +1776,13 @@ program define _dm_rebuild
 		local corr_file "`corr_file_adjusted'"
 	}
 
-	* ══════════════════════════════════════════════════════════════════════
+	* ======================================================================
 	* STEP 1: Generate base synthetic data using Gaussian copula
-	* ══════════════════════════════════════════════════════════════════════
+	* ======================================================================
 
-	di as txt _n "══════════════════════════════════════════════════════════════"
+	di as txt _n "{hline 60}"
 	di as txt "STEP 1: Generating Synthetic Data (Gaussian Copula)"
-	di as txt "══════════════════════════════════════════════════════════════"
+	di as txt "{hline 60}"
 
 	clear
 	set obs `N'
@@ -1840,13 +1842,13 @@ program define _dm_rebuild
 		save `copula_data', replace
 	}
 
-	* ══════════════════════════════════════════════════════════════════════
+	* ======================================================================
 	* STEP 2: Transform to match marginal distributions
-	* ══════════════════════════════════════════════════════════════════════
+	* ======================================================================
 
-	di as txt _n "══════════════════════════════════════════════════════════════"
+	di as txt _n "{hline 60}"
 	di as txt "STEP 2: Matching Marginal Distributions"
-	di as txt "══════════════════════════════════════════════════════════════"
+	di as txt "{hline 60}"
 
 	* Get list of variables in correlation matrix
 	use `corr_file', clear
@@ -2006,9 +2008,9 @@ program define _dm_rebuild
 
 	di as result _n "✓ Synthetic data generated: " _N " observations"
 
-	* ══════════════════════════════════════════════════════════════════════
+	* ======================================================================
 	* STEP 3: LAYER 4 - Enforce checkpoint constraints (if checkpoints exist)
-	* ══════════════════════════════════════════════════════════════════════
+	* ======================================================================
 
 	* Apply checkpoint constraints to match model results (only if checkpoints exist)
 	if `has_checkpoints' {
@@ -2018,13 +2020,13 @@ program define _dm_rebuild
 		di as txt _n "Skipping Layer 4 (no checkpoints)"
 	}
 
-	* ══════════════════════════════════════════════════════════════════════
+	* ======================================================================
 	* Summary
-	* ══════════════════════════════════════════════════════════════════════
+	* ======================================================================
 
-	di as txt _n "══════════════════════════════════════════════════════════════"
+	di as txt _n "{hline 60}"
 	di as result "REBUILD COMPLETE"
-	di as txt "══════════════════════════════════════════════════════════════"
+	di as txt "{hline 60}"
 
 	di as txt _n "Synthetic dataset created:"
 	di as txt "  Observations: " as result _N
@@ -2051,9 +2053,9 @@ end
 program define _dm_rebuild_stratified
 	args indir seed strata_var
 
-	di as txt _n "══════════════════════════════════════════════════════════════"
+	di as txt _n "{hline 60}"
 	di as txt "STRATIFIED REBUILD MODE"
-	di as txt "══════════════════════════════════════════════════════════════"
+	di as txt "{hline 60}"
 	di as txt "Stratification variable: " as result "`strata_var'"
 
 	* Read schema (needed throughout)
@@ -2717,9 +2719,9 @@ program define _dm_rebuild_stratified
 	* Debug: check final dataset
 	qui ds
 	local final_vars "`r(varlist)'"
-	di as txt _n "══════════════════════════════════════════════════════════════"
+	di as txt _n "{hline 60}"
 	di as result "STRATIFIED REBUILD COMPLETE (WITH CHECKPOINT CONSTRAINTS)"
-	di as txt "══════════════════════════════════════════════════════════════"
+	di as txt "{hline 60}"
 	di as txt "Total observations: " as result _N
 	di as txt "Strata: " as result "`n_strata'"
 	di as txt "Variables: " as result "`: word count `final_vars''"
@@ -2775,9 +2777,9 @@ program define _dm_check
 		exit 601
 	}
 
-	di as txt _n "══════════════════════════════════════════════════════════════"
+	di as txt _n "{hline 60}"
 	di as result "DATAMIRROR CHECK - Fidelity Validation"
-	di as txt "══════════════════════════════════════════════════════════════"
+	di as txt "{hline 60}"
 
 	* Read checkpoints (optional)
 	cap confirm file "`indir'/checkpoints.csv"
@@ -2823,9 +2825,9 @@ program define _dm_check
 
 	* Validate stratification if used
 	if `has_strata' & "`strata_var'" != "" {
-		di as txt _n "══════════════════════════════════════════════════════════════"
+		di as txt _n "{hline 60}"
 		di as result "STRATIFICATION VALIDATION"
-		di as txt "══════════════════════════════════════════════════════════════"
+		di as txt "{hline 60}"
 		di as txt "Stratification variable: " as result "`strata_var'"
 
 		* Get strata levels from current data
@@ -2990,9 +2992,9 @@ program define _dm_check
 		save `orig_coefs', replace
 		restore
 
-		di as txt _n "─────────────────────────────────────────────────────────────"
+		di as txt _n "{hline 60}"
 		di as txt "Checkpoint `cp': " as result "`tag'"
-		di as txt "─────────────────────────────────────────────────────────────"
+		di as txt "{hline 60}"
 
 		* Use stored cmdline if available (preserves fixed effects, clustered SEs, etc.)
 		if "`cmdline'" != "" & "`cmdline'" != "." {
@@ -3189,8 +3191,8 @@ program define _dm_check
 	}
 	}  // end if has_checkpoints
 
-	di as txt _n "══════════════════════════════════════════════════════════════"
+	di as txt _n "{hline 60}"
 	di as result "VALIDATION COMPLETE"
-	di as txt "══════════════════════════════════════════════════════════════"
+	di as txt "{hline 60}"
 end
 

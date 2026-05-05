@@ -35,7 +35,7 @@ program define datamirror, rclass
 	* is build-injected from packages.json; in source mode it stays as the
 	* literal placeholder, which the regex guard treats as "skip". Routed
 	* through the _rs_utils dispatcher because Stata's autoloader registers
-	* only the filename-matched program — nested programs in _rs_utils.ado
+	* only the filename-matched program; nested programs in _rs_utils.ado
 	* aren't directly callable from outside.
 	local DATAMIRROR_MIN_CORE "{{MIN_CORE}}"
 	if (regexm("`DATAMIRROR_MIN_CORE'", "^[0-9]")) {
@@ -54,7 +54,7 @@ program define datamirror, rclass
 	local subcmd = subinstr("`subcmd'", ",", "", .)
 
 	* ==========================================================================
-	* META SUBCOMMANDS (version, cite) — handled locally
+	* META SUBCOMMANDS (version, cite): handled locally
 	* ==========================================================================
 	if ("`subcmd'" == "version") {
 		di as text "datamirror version " as result "`DATAMIRROR_VERSION'"
@@ -157,7 +157,7 @@ program define _datamirror_wrapper_end
 	}
 
 	* Parse command for conditional logic.
-	* Compound-quote the inclusion — command_line carries embedded double-quotes
+	* Compound-quote the inclusion: command_line carries embedded double-quotes
 	* (e.g. checkpoint_dir("..."), cluster("...")) and a plain "`command_line'"
 	* test mistokenises the path after the first closing quote (r(111)).
 	if (`"`command_line'"' != "") {

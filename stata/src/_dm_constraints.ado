@@ -1,5 +1,5 @@
 * =============================================================================
-* RegiStream DataMirror — Coefficient Adjustment Engines
+* RegiStream DataMirror: Coefficient Adjustment Engines
 * -----------------------------------------------------------------------------
 * Layer 4 of the architecture: make synthetic data reproduce checkpoint
 * regression coefficients. Two families of adjustment live here.
@@ -15,12 +15,12 @@
 *                                        CSVs, routes each checkpoint to the
 *                                        right engine based on e(cmd).
 *
-*     _dm_constrain_ols            regress — y += λ·Δβ·(x − x̄)
-*     _dm_constrain_fe             reghdfe — same as OLS but respects the
+*     _dm_constrain_ols            regress: y += lambda * Delta_beta * (x - xbar)
+*     _dm_constrain_fe             reghdfe: same as OLS but respects the
 *                               estimation sample after singleton-dropping
-*     _dm_constrain_iv             ivregress — adjusts y via instruments Z, not
+*     _dm_constrain_iv             ivregress: adjusts y via instruments Z, not
 *                               endogenous X, to preserve instrument validity
-*     _dm_constrain_nonlinear      logit/probit/poisson/nbreg — unified
+*     _dm_constrain_nonlinear      logit/probit/poisson/nbreg: unified
 *                               gradient-descent engine with factor-variable
 *                               swapping for binary outcomes and α-constraint
 *                               for nbreg
@@ -30,7 +30,7 @@
 * =============================================================================
 
 * -----------------------------------------------------------------------------
-* Dispatcher — single externally-callable entry point for the adjusters file.
+* Dispatcher: single externally-callable entry point for the adjusters file.
 * Stata auto-loads an ado by filename matching the program name; having
 * _dm_constraints here lets the whole file (with all its sub-programs) register
 * when any adjuster is invoked. Mirrors autolabel's _al_utils pattern.
@@ -70,9 +70,9 @@ program define _dm_constrain_correlations
 		exit
 	}
 
-	di as txt _n "══════════════════════════════════════════════════════════════"
+	di as txt _n "{hline 60}"
 	di as result "COEFFICIENT-AWARE COPULA: Encoding checkpoint constraints"
-	di as txt "══════════════════════════════════════════════════════════════"
+	di as txt "{hline 60}"
 
 	* Step 1: Gather all information first (deferred execution approach)
 	* Get variable list from correlation matrix
@@ -332,9 +332,9 @@ end
 program define _dm_apply_checkpoint_constraints
 	args indir
 
-	di as txt _n "══════════════════════════════════════════════════════════════"
+	di as txt _n "{hline 60}"
 	di as txt "LAYER 4: APPLYING CHECKPOINT CONSTRAINTS"
-	di as txt "══════════════════════════════════════════════════════════════"
+	di as txt "{hline 60}"
 
 	* Save current data to tempfile
 	tempfile synth_data
@@ -462,9 +462,9 @@ program define _dm_apply_checkpoint_constraints
 	local n_global_passes = 3  // Do multiple passes through all checkpoints
 
 	forval global_pass = 1/`n_global_passes' {
-		di as txt _n "══════════════════════════════════════════════════════════════"
+		di as txt _n "{hline 60}"
 		di as txt "GLOBAL PASS `global_pass' of `n_global_passes'"
-		di as txt "══════════════════════════════════════════════════════════════"
+		di as txt "{hline 60}"
 
 		* -----------------------------------------------------------------
 		* Joint-IV sub-pass: for each shared-y IV group, run the stacked
@@ -562,9 +562,9 @@ program define _dm_apply_checkpoint_constraints
 		}
 	}
 
-	di as txt _n "══════════════════════════════════════════════════════════════"
+	di as txt _n "{hline 60}"
 	di as result "CHECKPOINT CONSTRAINTS APPLIED"
-	di as txt "══════════════════════════════════════════════════════════════"
+	di as txt "{hline 60}"
 end
 
 * -----------------------------------------------------------------------------
@@ -1346,7 +1346,7 @@ program define _dm_constrain_probit
 end
 
 * -----------------------------------------------------------------------------
-* _dm_constrain_binary_dgp — shared core for logit/probit direct DGP sampling.
+* _dm_constrain_binary_dgp: shared core for logit/probit direct DGP sampling.
 * -----------------------------------------------------------------------------
 program define _dm_constrain_binary_dgp
 	args link cmdline targets varnames depvar
@@ -1403,7 +1403,7 @@ program define _dm_constrain_binary_dgp
 end
 
 * -----------------------------------------------------------------------------
-* _dm_constrain_poisson — direct Poisson DGP sampling.
+* _dm_constrain_poisson: direct Poisson DGP sampling.
 *
 * Given target β* (in `targets'), generate y from the Poisson DGP:
 *     μ*_i = exp(X_i · β*)
@@ -1469,7 +1469,7 @@ program define _dm_constrain_poisson
 end
 
 * -----------------------------------------------------------------------------
-* _dm_constrain_nbreg — direct Gamma-Poisson DGP sampling.
+* _dm_constrain_nbreg: direct Gamma-Poisson DGP sampling.
 *
 * Given target β* (in `targets') and α* (`alpha_orig'), generate y from the
 * NB2 data-generating process:
