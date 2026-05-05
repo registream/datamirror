@@ -827,6 +827,7 @@ program define _dm_extract
 
 	di as txt "Capturing " as result "`=c(k)'" as txt " variables from dataset"
 
+	cap file close schema
 	file open schema using "`outdir'/schema.csv", write replace
 	file write schema "varname,type,format,storage,is_integer" _n
 
@@ -857,6 +858,7 @@ program define _dm_extract
 	* Export marginals for continuous variables
 	di as txt "Exporting marginals (continuous)..."
 
+	cap file close marg
 	file open marg using "`outdir'/marginals_cont.csv", write replace
 	file write marg "varname"
 	forval q = 0(1)100 {
@@ -923,6 +925,7 @@ program define _dm_extract
 	* Export marginals for categorical variables
 	di as txt "Exporting marginals (categorical)..."
 
+	cap file close cat
 	file open cat using "`outdir'/marginals_cat.csv", write replace
 	file write cat "varname,value,freq,prop" _n
 
@@ -1036,6 +1039,7 @@ program define _dm_extract
 		qui levelsof `strata_var', local(strata_levels)
 
 		* Export stratified continuous marginals
+		cap file close marg_strat
 		file open marg_strat using "`outdir'/marginals_cont_stratified.csv", write replace
 		file write marg_strat "varname,stratum"
 		forval q = 0(1)100 {
@@ -1113,6 +1117,7 @@ program define _dm_extract
 		}
 
 		* Export stratified categorical marginals
+		cap file close cat_strat
 		file open cat_strat using "`outdir'/marginals_cat_stratified.csv", write replace
 		file write cat_strat "varname,stratum,value,freq,prop" _n
 
@@ -1306,6 +1311,7 @@ program define _dm_extract
 
 		* Export correlation matrix
 		* Strip "_dmseq" suffix from recoded variable names for export
+		cap file close corr
 		file open corr using "`outdir'/correlations.csv", write replace
 		file write corr "var1,var2,corr" _n
 
@@ -1343,6 +1349,7 @@ program define _dm_extract
 			}
 		}
 
+		cap file close corr_strat
 		file open corr_strat using "`outdir'/correlations_stratified.csv", write replace
 		file write corr_strat "stratum,var1,var2,corr" _n
 
@@ -1407,9 +1414,11 @@ program define _dm_extract
 	if $dm_n_checkpoints > 0 {
 		di as txt "Exporting checkpoints..."
 
+		cap file close ckpt
 		file open ckpt using "`outdir'/checkpoints.csv", write replace
 		file write ckpt "cp_num,tag,cmd,cmdline,depvar,N,notes,alpha" _n
 
+		cap file close coef
 		file open coef using "`outdir'/checkpoints_coef.csv", write replace
 		file write coef "cp_num,varname,coef,se" _n
 
@@ -1466,6 +1475,7 @@ program define _dm_extract
 
 	di as txt _n "Exporting metadata..."
 
+	cap file close meta
 	file open meta using "`outdir'/metadata.csv", write replace
 	file write meta "key,value" _n
 	* Normalise datamirror_version: the template placeholder survives
