@@ -194,9 +194,12 @@ program define _dm_init
 	* _rs_utils mkdir_p is recursive, native, no shell.
 	_rs_utils mkdir_p "`checkpoint_dir'"
 
-	* Verify directory was created
-	cap confirm file "`checkpoint_dir'/."
-	if _rc != 0 {
+	* Verify directory was created. Use _rs_utils confirmdir (cap cd test)
+	* rather than `confirm file dir/.` — the latter returns r(601) for
+	* directories on Stata for Windows regardless of whether the directory
+	* exists, breaking init even after a successful mkdir.
+	_rs_utils confirmdir "`checkpoint_dir'"
+	if r(exists) != 1 {
 		di as error "Could not create directory: `checkpoint_dir'/"
 		exit 603
 	}
