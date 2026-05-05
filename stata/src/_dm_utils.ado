@@ -1478,14 +1478,19 @@ program define _dm_extract
 	cap file close meta
 	file open meta using "`outdir'/metadata.csv", write replace
 	file write meta "key,value" _n
-	* Normalise datamirror_version: the template placeholder survives
-	* in the dev tree (where datamirror.ado has not been through
-	* export_package.py). Record "dev" in that case for audit clarity.
-	* detect_installed_modules reads the *! version header from the
-	* on-disk datamirror.ado — no session global needed.
+	* Normalise datamirror_version: detect_installed_modules reads the
+	* `*! version X.Y.Z` header off the on-disk datamirror.ado. In dev
+	* (unstamped header) the version regex doesn't match and detect
+	* returns empty — record "dev" in that case.
+	*
+	* Do NOT compare against an unresolved placeholder string here: the
+	* build's stamp_file() substitutes those placeholders verbatim inside
+	* the source, so a stamped artifact would compare against the real
+	* version and clobber every correct production value with "dev".
+	* Use the empty-string check, which is the genuine dev signal.
 	cap _rs_utils detect_installed_modules
 	local dm_ver "`r(datamirror_version)'"
-	if "`dm_ver'" == "{{VERSION}}" | "`dm_ver'" == "" {
+	if "`dm_ver'" == "" {
 		local dm_ver "dev"
 	}
 
