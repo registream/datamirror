@@ -3060,20 +3060,65 @@ program define _dm_check
 			continue
 		}
 
-		* Compare coefficients
+		* Compare coefficients on two scales and report two metrics:
+		*   |Δβ|        raw absolute deviation (scale-dependent on units)
+		*   Δβ/SE       standardized deviation (scale-free across estimators)
+		* The standardized metric is the paper's headline criterion (Clark
+		* 2026, §8.1). The verdict is computed on the "headline" coefficient
+		* set the paper defines: excludes `_cons' and absorbed-effect /
+		* factor-variable expansions, and for IV regressions narrows to the
+		* endogenous block (e(instd)) since the joint Newton step in Layer 4
+		* pins those by construction and lets exogenous regressors drift via
+		* FWL projection. For non-IV models all e(b) columns get pinned
+		* directly, so the headline set is everything non-_cons non-factor.
+		* The full table is still printed for context; rows are tagged H
+		* (headline) or n (nuisance) accordingly.
 		matrix synth_b = e(b)
+		local cmd_used "`e(cmd)'"
+		local endog_list "`e(instd)'"
 
 		di as txt _n "  Coefficient Comparison:"
-		di as txt "  {hline 60}"
-		di as txt "  Variable" _col(25) "Original" _col(40) "Synthetic" _col(55) "Δ"
-		di as txt "  {hline 60}"
+		di as txt "  {hline 78}"
+		di as txt "  Variable" _col(25) "Original" _col(40) "Synthetic" _col(55) "|Δβ|" _col(67) "Δβ/SE" _col(76) "set"
+		di as txt "  {hline 78}"
 
-		scalar max_delta = 0
+		scalar max_delta_all = 0
+		scalar max_delta_se_all = 0
+		scalar max_delta_se_headline = 0
+		local n_undefined_se = 0
+		local n_headline = 0
 
 		use `orig_coefs', clear
 		forval i = 1/`ncoefs' {
 			local vn = varname[`i']
 			local orig = coef[`i']
+			local se_orig = se[`i']
+
+			* Headline membership (paper §8.1):
+			*   exclude _cons
+			*   exclude factor-variable expansions: names starting with
+			*     `digit.' (e.g. 1.foreign, 2bn.region) or containing `#'
+			*     (interactions). reghdfe absorbs FE before e(b), so its
+			*     absorbed columns never appear here in the first place.
+			*   for IV, narrow further to the endogenous block (e(instd)):
+			*     Layer 4's joint Newton step pins those by construction;
+			*     exogenous regressors drift via the FWL projection.
+			local is_headline = 1
+			if "`vn'" == "_cons" {
+				local is_headline = 0
+			}
+			else if regexm("`vn'", "^[0-9]+[bo]*\.") | strpos("`vn'", "#") > 0 {
+				local is_headline = 0
+			}
+			else if "`endog_list'" != "" {
+				* IV case: keep only endogenous-block coefficients
+				local in_endog : list posof "`vn'" in endog_list
+				if `in_endog' == 0 {
+					local is_headline = 0
+				}
+			}
+			local tag = cond(`is_headline', "H", "n")
+			if `is_headline' local n_headline = `n_headline' + 1
 
 			* Find matching coefficient in synthetic results
 			local found = 0
@@ -3089,32 +3134,57 @@ program define _dm_check
 
 			if `found' {
 				local delta = abs(`synth' - `orig')
-				if `delta' > max_delta {
-					scalar max_delta = `delta'
+				if `delta' > max_delta_all {
+					scalar max_delta_all = `delta'
 				}
 
-				di as txt "  `vn'" _col(25) %8.4f `orig' _col(40) %8.4f `synth' _col(55) %8.4f `delta'
+				* Δβ/SE is undefined when SE=0 (no within-sample variance,
+				* documented in paper §8.3 for Dupas-Robinson balance checks
+				* on subsets where the predictor is constant) and when SE
+				* is missing in the bundle.
+				if !missing(`se_orig') & `se_orig' > 0 {
+					local delta_se = `delta' / `se_orig'
+					if `delta_se' > max_delta_se_all {
+						scalar max_delta_se_all = `delta_se'
+					}
+					if `is_headline' & `delta_se' > max_delta_se_headline {
+						scalar max_delta_se_headline = `delta_se'
+					}
+					di as txt "  `vn'" _col(25) %8.4f `orig' _col(40) %8.4f `synth' _col(55) %8.4f `delta' _col(67) %8.4f `delta_se' _col(76) "`tag'"
+				}
+				else {
+					local n_undefined_se = `n_undefined_se' + 1
+					di as txt "  `vn'" _col(25) %8.4f `orig' _col(40) %8.4f `synth' _col(55) %8.4f `delta' _col(67) "n/a" _col(76) "`tag'"
+				}
 			}
 			else {
-				di as txt "  `vn'" _col(25) %8.4f `orig' _col(40) "(missing)" _col(55) "-"
+				di as txt "  `vn'" _col(25) %8.4f `orig' _col(40) "(missing)" _col(55) "-" _col(67) "-" _col(76) "`tag'"
 			}
 		}
 
-		di as txt "  {hline 60}"
-		di as txt "  Max |Δβ| = " as result %6.4f max_delta
+		di as txt "  {hline 78}"
+		di as txt "  Headline (H, paper metric, n=`n_headline'):  " ///
+			as result "Max Δβ/SE = " %6.4f max_delta_se_headline
+		di as txt "  All coefficients (H+n):                    " ///
+			as result "Max Δβ/SE = " %6.4f max_delta_se_all ///
+			as txt "    Max |Δβ| = " as result %8.4f max_delta_all
+		if `n_undefined_se' > 0 {
+			di as txt "  (`n_undefined_se' coefficient(s) with SE=0 excluded from Δβ/SE)"
+		}
 
-		* Evaluate fidelity
-		if max_delta < 0.01 {
-			di as result "  ✓ EXCELLENT (Δβ < 0.01)"
+		* Evaluate fidelity on the headline metric (Clark 2026, §8.1).
+		* Bands: <1 sub-SE pin, <2 single-SE drift, <3 paper threshold.
+		if max_delta_se_headline < 1 {
+			di as result "  ✓ EXCELLENT (headline Δβ/SE < 1)"
 		}
-		else if max_delta < 0.05 {
-			di as result "  ✓ GOOD (Δβ < 0.05)"
+		else if max_delta_se_headline < 2 {
+			di as result "  ✓ GOOD (headline Δβ/SE < 2)"
 		}
-		else if max_delta < 0.10 {
-			di as txt "  ⚠ ACCEPTABLE (Δβ < 0.10)"
+		else if max_delta_se_headline < 3 {
+			di as txt "  ✓ PASS (headline Δβ/SE < 3, paper threshold)"
 		}
 		else {
-			di as error "  ✗ POOR (Δβ > 0.10)"
+			di as error "  ✗ FAIL (headline Δβ/SE ≥ 3)"
 		}
 	}
 	}  // end if has_checkpoints
