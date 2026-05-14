@@ -454,6 +454,33 @@ program define _dm_apply_checkpoint_constraints
 		di as txt _n "Detected " as result "`n_iv_groups'" as txt " shared-outcome IV groups; will apply joint Newton step"
 	}
 
+	* -------------------------------------------------------------------------
+	* Topological dispatch: GLM-family checkpoints (logit, logistic, probit,
+	* poisson, nbreg) run BEFORE linear-family checkpoints (regress, reghdfe,
+	* ivregress) within each global pass.
+	*
+	* Why: a GLM adjuster resamples its depvar from p(y|Xβ*), conditional on
+	* the current X. If a later linear-family checkpoint uses that depvar as
+	* a covariate, the linear pin will see a stable design column and the
+	* closed-form Newton step will hold. Running linear-before-GLM in the
+	* reverse case would leave the linear pin off-target by the time the
+	* bundle is finalized, because the GLM resampling that follows mutates
+	* a column of the linear checkpoint's X.
+	*
+	* This handles the common "use one regression's outcome as a control in
+	* another regression" pattern without per-pair dependency tracking.
+	* -------------------------------------------------------------------------
+	local glm_cps ""
+	local linear_cps ""
+	forval cp = 1/`n_ckpts' {
+		if inlist("`cmd_`cp''", "logit", "logistic", "probit", "poisson", "nbreg") {
+			local glm_cps "`glm_cps' `cp'"
+		}
+		else {
+			local linear_cps "`linear_cps' `cp'"
+		}
+	}
+
 	* Apply constraints iteratively with multiple global passes
 	* Multiple passes help when checkpoints share Y variables or correlated instruments
 	local max_iter = 50        // Fewer iterations per checkpoint
@@ -512,33 +539,18 @@ program define _dm_apply_checkpoint_constraints
 		}
 
 
-		forval cp = 1/`n_ckpts' {
-			* Skip IV checkpoints that belong to a joint group.
-			local skip_cp : list cp in jointly_handled_cps
-			if `skip_cp' {
-				continue
-			}
-
+		* GLM-family sub-pass: resample each GLM depvar from p(y|Xβ*). Done
+		* before the linear sub-pass so linear-family pins see a design
+		* matrix whose GLM-depvar columns are already at their final values.
+		foreach cp of local glm_cps {
 			di as txt _n "{hline 60}"
-			di as txt "Checkpoint `cp': `tag_`cp'' (pass `global_pass')"
+			di as txt "Checkpoint `cp': `tag_`cp'' (pass `global_pass') [GLM]"
 			di as txt "{hline 60}"
 
-			* Check if we can run this model
 			local cmdline "`cmdline_`cp''"
 			local cmd "`cmd_`cp''"
 
-			* Dispatch to appropriate model-specific adjuster
-			if "`cmd'" == "regress" | "`cmd'" == "reg" {
-				_dm_constrain_ols "`cmdline'" `targets_`cp'' "`varnames_`cp''" "`depvar_`cp''"
-			}
-			else if "`cmd'" == "reghdfe" {
-				_dm_constrain_fe "`cmdline'" `targets_`cp'' "`varnames_`cp''" "`depvar_`cp''"
-			}
-			else if "`cmd'" == "ivregress" {
-				_dm_constrain_iv "`cmdline'" `targets_`cp'' `ses_`cp'' "`varnames_`cp''" "`depvar_`cp''" ///
-				              `max_iter' `tolerance' `learning_rate'
-			}
-			else if "`cmd'" == "logit" | "`cmd'" == "logistic" {
+			if "`cmd'" == "logit" | "`cmd'" == "logistic" {
 				_dm_constrain_logit "`cmdline'" `targets_`cp'' "`varnames_`cp''" "`depvar_`cp''"
 			}
 			else if "`cmd'" == "probit" {
@@ -555,6 +567,35 @@ program define _dm_apply_checkpoint_constraints
 					local alpha_orig = ${dm_cp`cp'_alpha}
 				}
 				_dm_constrain_nbreg "`cmdline'" `targets_`cp'' "`varnames_`cp''" "`depvar_`cp''" `alpha_orig'
+			}
+		}
+
+		* Linear-family sub-pass: closed-form OLS Newton, FE-residualized
+		* Newton for reghdfe, and single-checkpoint IV (joint-IV groups have
+		* already been handled above).
+		foreach cp of local linear_cps {
+			* Skip IV checkpoints that belong to a joint group.
+			local skip_cp : list cp in jointly_handled_cps
+			if `skip_cp' {
+				continue
+			}
+
+			di as txt _n "{hline 60}"
+			di as txt "Checkpoint `cp': `tag_`cp'' (pass `global_pass') [linear]"
+			di as txt "{hline 60}"
+
+			local cmdline "`cmdline_`cp''"
+			local cmd "`cmd_`cp''"
+
+			if "`cmd'" == "regress" | "`cmd'" == "reg" {
+				_dm_constrain_ols "`cmdline'" `targets_`cp'' "`varnames_`cp''" "`depvar_`cp''"
+			}
+			else if "`cmd'" == "reghdfe" {
+				_dm_constrain_fe "`cmdline'" `targets_`cp'' "`varnames_`cp''" "`depvar_`cp''"
+			}
+			else if "`cmd'" == "ivregress" {
+				_dm_constrain_iv "`cmdline'" `targets_`cp'' `ses_`cp'' "`varnames_`cp''" "`depvar_`cp''" ///
+				              `max_iter' `tolerance' `learning_rate'
 			}
 			else {
 				di as txt "  Skipping: `cmd' not yet supported for constraint enforcement"
