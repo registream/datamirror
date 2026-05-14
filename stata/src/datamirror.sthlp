@@ -145,9 +145,9 @@ distributional structure; the fourth pins regression coefficients.
 {p2colset 5 24 26 2}{...}
 {p2col :Layer 1, marginals} per-variable quantile vector for
 continuous variables, category frequency table for discrete variables{p_end}
-{p2col :Layer 2, correlations} Pearson correlation matrix computed on
-normalized ranks (copula correlations), both overall and within
-strata if {opt strata()} was specified{p_end}
+{p2col :Layer 2, correlations} Spearman rank correlation matrix
+(the natural input for the Gaussian copula in Layer 3), both
+overall and within strata if {opt strata()} was specified{p_end}
 {p2col :Layer 3, copula sampling} Gaussian copula draws
 parameterised by Layer 1 marginals and Layer 2 correlations{p_end}
 {p2col :Layer 4, checkpoint constraints} coefficient-preserving layer:
