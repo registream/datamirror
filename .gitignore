@@ -20,5 +20,8 @@ replication/*/RUN_RESULTS.txt
 # examples/prepare_ukhls_simple.do, not committed to the repo)
 stata/tests/data/*.dta
 
+# Local-only audit scripts and result summaries
+replication/.local/
+
 # OS files
 .DS_Store

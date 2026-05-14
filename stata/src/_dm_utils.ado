@@ -1265,14 +1265,18 @@ program define _dm_extract
 		di as txt "  Computing correlation matrix for `nvars' variables..."
 
 		* Raise matsize when the variable count exceeds the session limit.
-		* Stata's default matsize is 400; pwcorr produces an nvars*nvars
+		* Stata's default matsize is 400; spearman produces an nvars*nvars
 		* matrix and fails when nvars exceeds that ceiling.
 		if `nvars' > c(matsize) {
 			di as txt "  Increasing matsize from `=c(matsize)' to `nvars'..."
 			set matsize `nvars'
 		}
 
-		cap qui pwcorr `allnumvars_recoded', sig
+		* Spearman rank correlation. Rank correlation is the natural input
+		* for a Gaussian copula because it is invariant to monotone
+		* transformations of the marginals; Pearson would only coincide
+		* with the copula correlation parameter for jointly normal data.
+		cap qui spearman `allnumvars_recoded', pw
 		if _rc != 0 {
 			di as error "  ERROR: Failed to compute correlation matrix (rc=`=_rc')"
 			di as error "  Number of variables: `nvars'"
@@ -1284,7 +1288,7 @@ program define _dm_extract
 			di as error "    - Other matrix operation issue"
 			exit _rc
 		}
-		matrix C = r(C)
+		matrix C = r(Rho)
 
 		* Check for and impute missing correlations with 0 (independence assumption)
 		* (Missing correlations occur when variables have no overlapping non-missing observations)
@@ -1376,10 +1380,11 @@ program define _dm_extract
 				set matsize `nvars_s'
 			}
 
-			* Compute full correlation matrix within this stratum using pairwise deletion
-			cap qui pwcorr `corr_vars_recoded' if `strata_var' == `stratum', sig
+			* Compute full Spearman rank-correlation matrix within this stratum
+			* using pairwise deletion.
+			cap qui spearman `corr_vars_recoded' if `strata_var' == `stratum', pw
 			if _rc == 0 {
-				matrix C_s = r(C)
+				matrix C_s = r(Rho)
 
 				local nvars_s : word count `corr_vars_recoded'
 				forval i = 1/`nvars_s' {
