@@ -1,6 +1,27 @@
 # DataMirror Changelog
 
-## Unreleased
+## v1.1.0 (2026-05-18)
+
+Spearman copula in Layer 3. Faster extract and rebuild. Fixes silent truncation in joint-IV spec.
+
+### Layer 3
+
+- Correlation matrix is now Spearman rank rather than Pearson. Spearman is invariant to monotone transformations of the marginals, which is the correct input for a Gaussian copula with arbitrary empirical marginals. Pearson coincided with the copula correlation parameter only under joint normality.
+
+### Layer 4
+
+- Topological dispatch inside each global pass: GLM-family checkpoints (logit, probit, poisson, nbreg) are applied before linear-family checkpoints (regress, reghdfe, ivregress). A linear pin whose covariate is a GLM checkpoint's depvar then sees a stable design column. Without this ordering the closed-form OLS Newton step would be undone by a subsequent GLM resampling.
+
+### Performance
+
+- Continuous and stratified continuous marginals use a single `_pctile var, p(1(1)99)` call per variable instead of 99 per-percentile calls.
+- Categorical and stratified categorical marginals use `tabulate var, matcell()` to return all frequencies in one pass instead of `levelsof + count if` per level. Same pattern for the rare-binary diagnostic.
+- `_dm_classify_variable` result cached via variable characteristics; cache wipes at extract entry and exit. The classifier was previously re-invoked per variable across schema, marginals, categorical, and correlation passes, each call running a full-data tab.
+- Rebuild continuous and categorical loops vectorized: marginals read once, copula data loaded once, vectorized quantile-bracket assignment + interpolation, single save at end. Mirrors the pattern already correct in the stratified rebuild branch.
+
+### Correctness
+
+- Joint-IV spec file (`_dm_constrain_iv_joint`) declares `cmdline` and `varnames` as `strL` rather than `str244`. The old `str244` declaration silently truncated cmdlines or varname lists longer than 244 characters, a common case for IV regressions with multiple controls, factor-variable expansions (`i.year`, `i.region`), `cluster()`, or weight options. Single-checkpoint IV and OLS paths were unaffected.
 
 ### Privacy
 
