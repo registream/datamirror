@@ -512,8 +512,8 @@ program define _dm_apply_checkpoint_constraints
 			preserve
 			qui clear
 			qui set obs `n_group_cps'
-			qui gen str244 cmdline = ""
-			qui gen str244 varnames = ""
+			qui gen strL cmdline = ""
+			qui gen strL varnames = ""
 			qui gen str32  targets_matname = ""
 			qui gen str32  ses_matname = ""
 			local row = 0

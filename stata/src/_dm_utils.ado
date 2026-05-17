@@ -172,7 +172,7 @@ program define _dm_init
 		exit 602
 	}
 
-	* Wipe any stale v1.0 bundle files when -replace- is set. Intent
+	* Wipe any stale bundle files when -replace- is set. Intent
 	* matches Stata's usual "replace" semantics (file write replace
 	* erases the target): the subsequent extract should start from a
 	* clean directory, so old-schema or half-written files can't leak
@@ -483,13 +483,12 @@ program define _dm_checkpoint
 	* Supported-command allowlist. Reject unsupported commands early with a
 	* clean error rather than storing a checkpoint that Layer 4 cannot
 	* reconstruct at rebuild time. See docs/SUPPORTED_MODELS.md for the
-	* current list; v1.1 will extend via the ROADMAP Tier 1 items.
+	* current list.
 	local supported_cmds "regress reg reghdfe ivregress logit logistic probit poisson nbreg"
 	local cmd_found : list posof "`e(cmd)'" in supported_cmds
 	if `cmd_found' == 0 {
-		di as error _n "datamirror: command `'`e(cmd)'`' is not supported in v1.0."
+		di as error _n "datamirror: command `'`e(cmd)'`' is not supported."
 		di as error "Supported commands: `supported_cmds'."
-		di as error "See docs/SUPPORTED_MODELS.md for the current list and v1.1 roadmap."
 		exit 199
 	}
 
@@ -710,12 +709,21 @@ end
 program define _dm_classify_variable
 	args varname
 
+	* Cached result lives in a variable characteristic; extract wipes the
+	* char at entry and exit so nothing persists past a session.
+	local cached : char `varname'[_dm_class]
+	if "`cached'" != "" {
+		c_local is_categorical = `cached'
+		exit
+	}
+
 	* Get variable type
 	local vtype : type `varname'
 
 	* Strings are always categorical
 	if substr("`vtype'", 1, 3) == "str" {
 		c_local is_categorical 1
+		char `varname'[_dm_class] 1
 		exit
 	}
 
@@ -724,6 +732,7 @@ program define _dm_classify_variable
 	if _rc != 0 {
 		* Tab failed (too many values) - treat as continuous
 		c_local is_categorical 0
+		char `varname'[_dm_class] 0
 		exit
 	}
 	local nuniq = r(r)
@@ -737,17 +746,20 @@ program define _dm_classify_variable
 	*   - OR ≤100 unique values AND < 5% density (no value label required)
 	* Otherwise continuous
 	*
-	* Rationale: Variables like months (30 values), weeks (52 values), etc.
-	* are discrete even without value labels
-	* UPDATED: Threshold increased to support school IDs (64 unique values, ~2% density)
+	* Rationale: Variables like months (30 values), weeks (52 values),
+	* school IDs (~64 levels at ~2% density) are discrete even without
+	* value labels.
 	if "`vlab'" != "" & `nuniq' <= 100 & `nuniq' < _N/100 {
 		c_local is_categorical 1
+		char `varname'[_dm_class] 1
 	}
 	else if `nuniq' <= 100 & `nuniq' < _N/20 {
 		c_local is_categorical 1
+		char `varname'[_dm_class] 1
 	}
 	else {
 		c_local is_categorical 0
+		char `varname'[_dm_class] 0
 	}
 end
 
@@ -825,6 +837,11 @@ program define _dm_extract
 	qui ds
 	local allvars "`r(varlist)'"
 
+	* Drop stale classifier-cache chars from any prior extract run.
+	foreach v of local allvars {
+		char `v'[_dm_class]
+	}
+
 	di as txt "Capturing " as result "`=c(k)'" as txt " variables from dataset"
 
 	cap file close schema
@@ -881,21 +898,25 @@ program define _dm_extract
 				* Trim = 0 disables this (raw min/max in q0/q100).
 				* The grid stays monotonic, so rebuild's linear
 				* interpolation on [q_lower, q_upper] is unaffected.
-				qui sum `var', detail
+				qui sum `var'
+				local minval = r(min)
+				local maxval = r(max)
+				qui _pctile `var', p(1(1)99)
+				forval i = 1/99 {
+					local p`i' = r(r`i')
+				}
 				if `qtrim' > 0 {
-					qui _pctile `var', p(`qtrim')
-					local v_lo = r(r1)
-					qui _pctile `var', p(`qtrim_hi')
-					local v_hi = r(r1)
+					local v_lo = `p`qtrim''
+					local v_hi = `p`qtrim_hi''
 				}
 
 				file write marg "`var'"
 				forval q = 0(1)100 {
 					if `qtrim' <= 0 & `q' == 0 {
-						local val = r(min)
+						local val = `minval'
 					}
 					else if `qtrim' <= 0 & `q' == 100 {
-						local val = r(max)
+						local val = `maxval'
 					}
 					else if `qtrim' > 0 & `q' <= `qtrim' {
 						local val = `v_lo'
@@ -904,8 +925,7 @@ program define _dm_extract
 						local val = `v_hi'
 					}
 					else {
-						qui _pctile `var', p(`q')
-						local val = r(r1)
+						local val = `p`q''
 					}
 
 					if "`val'" == "" | "`val'" == "." {
@@ -935,16 +955,11 @@ program define _dm_extract
 
 		if `is_categorical' {
 			local vtype : type `var'
-			* Get unique values
-			cap qui levelsof `var', local(levels)
-			if _rc != 0 {
-				* Levelsof failed (too many values), skip
-				continue
-			}
 
-			* Count each level
 			if substr("`vtype'", 1, 3) == "str" {
-				* String variable - need quotes
+				* String variable - need quotes and per-level count
+				cap qui levelsof `var', local(levels)
+				if _rc != 0 continue
 				foreach lev of local levels {
 					qui count if `var' == "`lev'"
 					local freq = r(N)
@@ -961,10 +976,14 @@ program define _dm_extract
 				}
 			}
 			else {
-				* Numeric variable
-				foreach lev of local levels {
-					qui count if `var' == `lev'
-					local freq = r(N)
+				* Numeric variable - one tab pass gives all frequencies.
+				tempname F V
+				cap qui tab `var', matcell(`F') matrow(`V')
+				if _rc != 0 continue
+				local nlevs = rowsof(`F')
+				forval i = 1/`nlevs' {
+					local lev = `V'[`i', 1]
+					local freq = `F'[`i', 1]
 					local n_categories = `n_categories' + 1
 
 					* PRIVACY: Suppress small cells
@@ -999,20 +1018,16 @@ program define _dm_extract
 		local vtype : type `var'
 		if substr("`vtype'", 1, 3) == "str" continue
 
-		cap qui levelsof `var', local(levels_rb)
+		* Tab returns both cell counts in one pass and excludes missing.
+		tempname Fb
+		cap qui tab `var', matcell(`Fb')
 		if _rc != 0 continue
-		local nlev : word count `levels_rb'
-		if `nlev' != 2 continue
+		if rowsof(`Fb') != 2 continue
 
-		local freq_min = .
-		foreach lev of local levels_rb {
-			qui count if `var' == `lev' & !missing(`var')
-			if r(N) < `freq_min' local freq_min = r(N)
-		}
-		if `freq_min' == . continue
-
-		qui count if !missing(`var')
-		local n_nonmiss = r(N)
+		local f1 = `Fb'[1, 1]
+		local f2 = `Fb'[2, 1]
+		local freq_min = min(`f1', `f2')
+		local n_nonmiss = `f1' + `f2'
 		if `n_nonmiss' == 0 continue
 
 		local prev = `freq_min' / `n_nonmiss'
@@ -1026,7 +1041,6 @@ program define _dm_extract
 		di as txt "    `rare_bin_vars'"
 		di as txt "  Gaussian copula may not preserve correlations involving these variables well."
 		di as txt "  Regressions where they appear may show Δβ/SE > 0.3 after rebuild."
-		di as txt "  See docs/SUPPORTED_MODELS.md (Known limitations) for the v1.1 copula fix path."
 	}
 
 	* Export stratified marginals if strata variable specified
@@ -1072,21 +1086,25 @@ program define _dm_extract
 						* Get quantiles within this stratum. Tails are
 						* plateaued at DM_QUANTILE_TRIM percent (see the
 						* full-sample loop above for the semantics).
-						qui sum `var' if `strata_var' == `stratum', detail
+						qui sum `var' if `strata_var' == `stratum'
+						local minval = r(min)
+						local maxval = r(max)
+						qui _pctile `var' if `strata_var' == `stratum', p(1(1)99)
+						forval i = 1/99 {
+							local p`i' = r(r`i')
+						}
 						if `qtrim' > 0 {
-							qui _pctile `var' if `strata_var' == `stratum', p(`qtrim')
-							local v_lo = r(r1)
-							qui _pctile `var' if `strata_var' == `stratum', p(`qtrim_hi')
-							local v_hi = r(r1)
+							local v_lo = `p`qtrim''
+							local v_hi = `p`qtrim_hi''
 						}
 
 						file write marg_strat "`var',`stratum'"
 						forval q = 0(1)100 {
 							if `qtrim' <= 0 & `q' == 0 {
-								local val = r(min)
+								local val = `minval'
 							}
 							else if `qtrim' <= 0 & `q' == 100 {
-								local val = r(max)
+								local val = `maxval'
 							}
 							else if `qtrim' > 0 & `q' <= `qtrim' {
 								local val = `v_lo'
@@ -1095,8 +1113,7 @@ program define _dm_extract
 								local val = `v_hi'
 							}
 							else {
-								qui _pctile `var' if `strata_var' == `stratum', p(`q')
-								local val = r(r1)
+								local val = `p`q''
 							}
 
 							if "`val'" == "" | "`val'" == "." {
@@ -1137,13 +1154,11 @@ program define _dm_extract
 
 				if `is_categorical' {
 					local vtype : type `var'
-					cap qui levelsof `var' if `strata_var' == `stratum', local(levels_s)
-					if _rc != 0 {
-						continue
-					}
 
-					* Count each level within this stratum
 					if substr("`vtype'", 1, 3) == "str" {
+						* String variable: per-level count within stratum
+						cap qui levelsof `var' if `strata_var' == `stratum', local(levels_s)
+						if _rc != 0 continue
 						foreach lev of local levels_s {
 							qui count if `strata_var' == `stratum' & `var' == "`lev'"
 							local freq = r(N)
@@ -1160,9 +1175,14 @@ program define _dm_extract
 						}
 					}
 					else {
-						foreach lev of local levels_s {
-							qui count if `strata_var' == `stratum' & `var' == `lev'
-							local freq = r(N)
+						* Numeric: one tab pass per stratum × variable.
+						tempname Fs Vs
+						cap qui tab `var' if `strata_var' == `stratum', matcell(`Fs') matrow(`Vs')
+						if _rc != 0 continue
+						local nlevs_s = rowsof(`Fs')
+						forval i = 1/`nlevs_s' {
+							local lev = `Vs'[`i', 1]
+							local freq = `Fs'[`i', 1]
 							local n_categories_strat = `n_categories_strat' + 1
 
 							* PRIVACY: Suppress small cells
@@ -1573,6 +1593,11 @@ program define _dm_extract
 	file close `mh'
 	di as result "✓ manifest.csv"
 
+	* Drop classifier-cache chars to leave the user's dataset clean.
+	foreach v of local allvars {
+		char `v'[_dm_class]
+	}
+
 	di as txt _n "{hline 60}"
 	di as result "EXPORT COMPLETE"
 	di as txt "{hline 60}"
@@ -1859,140 +1884,140 @@ program define _dm_rebuild
 	use `corr_file', clear
 	levelsof var1, local(corr_vars)
 
-	* Generate continuous variables from quantiles
+	* Generate continuous variables from quantiles.
 	use `marg_cont', clear
 	local nrows = _N
 
-	forval row = 1/`nrows' {
-		* Load marginals to get variable info
-		use `marg_cont', clear
-		local vname = varname[`row']
+	if `nrows' > 0 {
+		* Pre-load per-variable info into locals so the copula data is loaded
+		* once and never reloaded inside the per-variable loop.
+		tempfile marg_temp
+		qui save `marg_temp'
 
-		* Get quantile values
-		forval q = 0(1)100 {
-			local q`q' = q`q'[`row']
+		forval row = 1/`nrows' {
+			use `marg_temp', clear
+			local vname = varname[`row']
+			local vname_`row' "`vname'"
+			forval q = 0(1)100 {
+				local q`q'_`row' = q`q'[`row']
+			}
+			use `schema_file', clear
+			qui levelsof is_integer if varname == "`vname'", local(is_int_`row') clean
+			if "`is_int_`row''" == "" {
+				local is_int_`row' = 0
+			}
 		}
 
-		* Get is_integer flag from schema
-		preserve
-		use `schema_file', clear
-		qui levelsof is_integer if varname == "`vname'", local(is_int) clean
-		if "`is_int'" == "" {
-			local is_int = 0
-		}
-		restore
-
-		* Generate variable by interpolating quantiles
+		* Load copula ONCE and generate ALL continuous variables in memory.
 		use `copula_data', clear
 
-		* Find index in correlation matrix, or generate independent uniform
-		local idx = 0
-		local i = 1
-		foreach cv of local corr_vars {
-			if "`cv'" == "`vname'" {
-				local idx = `i'
+		forval row = 1/`nrows' {
+			local vname "`vname_`row''"
+
+			* Find index in correlation matrix, or generate independent uniform
+			local idx = 0
+			local i = 1
+			foreach cv of local corr_vars {
+				if "`cv'" == "`vname'" {
+					local idx = `i'
+				}
+				local i = `i' + 1
 			}
-			local i = `i' + 1
-		}
 
-		* If variable is in correlation matrix, use corresponding u variable
-		* Otherwise, generate independent uniform
-		if `idx' > 0 {
-			local u_var = "u`idx'"
-		}
-		else {
-			tempvar u_temp
-			gen `u_temp' = runiform()
-			local u_var = "`u_temp'"
-		}
-
-		* Use uniform [0,1] to map to quantiles
-		gen `vname' = .
-
-		* Simple interpolation: map uniform to quantiles
-		forval i = 1/`=_N' {
-			local u_val = `u_var'[`i']
-			local pct = `u_val' * 100
-
-			* Find bracket
-			local lower_q = floor(`pct')
-			local upper_q = ceil(`pct')
-
-			* Check if quantile values are NA
-			if "`q`lower_q''" == "NA" | "`q`upper_q''" == "NA" {
-				* Missing value - assign missing
-				qui replace `vname' = . in `i'
-			}
-			else if `lower_q' == `upper_q' {
-				local val = `q`lower_q''
-				qui replace `vname' = `val' in `i'
+			if `idx' > 0 {
+				local u_var = "u`idx'"
 			}
 			else {
-				* Linear interpolation
-				local frac = `pct' - `lower_q'
-				local val = `q`lower_q'' + `frac' * (`q`upper_q'' - `q`lower_q'')
-				qui replace `vname' = `val' in `i'
+				tempvar u_temp
+				qui gen `u_temp' = runiform()
+				local u_var = "`u_temp'"
 			}
+
+			* Vectorized quantile mapping: same-bucket exact assignment +
+			* linear interpolation for in-between values. NA quantiles are
+			* skipped, so missing brackets leave the variable missing.
+			qui gen `vname' = .
+			qui gen double __pct = `u_var' * 100
+			qui gen int __lower_q = floor(__pct)
+			qui gen int __upper_q = ceil(__pct)
+
+			forval q = 0(1)100 {
+				if "`q`q'_`row''" != "NA" {
+					qui replace `vname' = `q`q'_`row'' if __lower_q == `q' & __upper_q == `q'
+				}
+			}
+
+			forval q = 0(1)99 {
+				local q_next = `q' + 1
+				if "`q`q'_`row''" != "NA" & "`q`q_next'_`row''" != "NA" {
+					qui replace `vname' = `q`q'_`row'' + (__pct - `q') * (`q`q_next'_`row'' - `q`q'_`row'') ///
+						if __lower_q == `q' & __upper_q == `q_next' & missing(`vname')
+				}
+			}
+
+			if "`is_int_`row''" == "1" {
+				qui replace `vname' = round(`vname')
+			}
+
+			qui drop __pct __lower_q __upper_q
+			di as txt "  ✓ `vname'"
 		}
 
-		* Round to integer if original variable was integer-valued
-		if "`is_int'" == "1" {
-			qui replace `vname' = round(`vname')
-		}
-
-		save `copula_data', replace
-
-		di as txt "  ✓ `vname'"
+		* Save ONCE after all continuous variables generated.
+		qui save `copula_data', replace
 	}
 
-	* Generate categorical variables
+	* Generate categorical variables.
 	use `marg_cat', clear
-	levelsof varname, local(catvars)
+	qui levelsof varname, local(catvars) clean
 
-	foreach cvar of local catvars {
-		use `marg_cat', clear
-		keep if varname == "`cvar'"
+	if `"`catvars'"' != "" {
+		* Pre-load per-categorical info (value/prop pairs + storage type) so
+		* the copula data is loaded once for all categoricals.
+		tempfile marg_cat_temp
+		qui save `marg_cat_temp'
 
-		* Get value-proportion pairs
-		local nvals = _N
-		forval i = 1/`nvals' {
-			local val`i' = value[`i']
-			local prop`i' = prop[`i']
+		foreach cvar of local catvars {
+			use `marg_cat_temp', clear
+			qui keep if varname == "`cvar'"
+			local nvals_`cvar' = _N
+			forval i = 1/`nvals_`cvar'' {
+				local val_`cvar'_`i' = value[`i']
+				local prop_`cvar'_`i' = prop[`i']
+			}
+			use `schema_file', clear
+			qui levelsof type if varname == "`cvar'", local(vtype) clean
+			local is_string_`cvar' = substr("`vtype'", 1, 3) == "str"
 		}
 
-		* Check variable type from schema
-		use `schema_file', clear
-		qui levelsof type if varname == "`cvar'", local(vtype) clean
-		local is_string = substr("`vtype'", 1, 3) == "str"
-
+		* Load copula ONCE and generate all categoricals in memory.
 		use `copula_data', clear
 
-		* Generate uniform random
-		gen u_temp = runiform()
+		foreach cvar of local catvars {
+			qui gen double u_temp = runiform()
 
-		* Assign categories based on proportions
-		if `is_string' == 1 {
-			* Create string variable
-			gen `cvar' = ""
-			local cumul = 0
-			forval i = 1/`nvals' {
-				local cumul = `cumul' + `prop`i''
-				qui replace `cvar' = "`val`i''" if u_temp <= `cumul' & `cvar' == ""
+			if `is_string_`cvar'' == 1 {
+				qui gen `cvar' = ""
+				local cumul = 0
+				forval i = 1/`nvals_`cvar'' {
+					local cumul = `cumul' + `prop_`cvar'_`i''
+					qui replace `cvar' = "`val_`cvar'_`i''" if u_temp <= `cumul' & `cvar' == ""
+				}
 			}
-		}
-		else {
-			gen `cvar' = .
-			local cumul = 0
-			forval i = 1/`nvals' {
-				local cumul = `cumul' + `prop`i''
-				qui replace `cvar' = `val`i'' if u_temp <= `cumul' & missing(`cvar')
+			else {
+				qui gen `cvar' = .
+				local cumul = 0
+				forval i = 1/`nvals_`cvar'' {
+					local cumul = `cumul' + `prop_`cvar'_`i''
+					qui replace `cvar' = `val_`cvar'_`i'' if u_temp <= `cumul' & missing(`cvar')
+				}
 			}
+			qui drop u_temp
+			di as txt "  ✓ `cvar'"
 		}
-		drop u_temp
 
-		save `copula_data', replace
-
-		di as txt "  ✓ `cvar'"
+		* Save ONCE after all categoricals generated.
+		qui save `copula_data', replace
 	}
 
 	* Clean up helper variables
